@@ -72,7 +72,7 @@ export async function getFeatureSettings(profileId: number): Promise<BotFeatureS
   return rows[0];
 }
 
-export async function updateBotProfile(profileId: number, updates: Partial<Pick<InsertBotProfile, "connectionStatus" | "publicMode" | "commandPreferences">>) {
+export async function updateBotProfile(profileId: number, updates: Partial<Pick<InsertBotProfile, "connectionStatus" | "publicMode" | "language" | "commandPreferences">>) {
   const db = await requireDb();
   await db.update(botProfiles).set(updates).where(eq(botProfiles.id, profileId));
 }
@@ -82,7 +82,7 @@ export async function updateSessionStorageKey(profileId: number, sessionStorageK
   await db.update(botProfiles).set({ sessionStorageKey }).where(eq(botProfiles.id, profileId));
 }
 
-export async function updateFeatureSettings(profileId: number, updates: Partial<Pick<BotFeatureSettings, "antiLink" | "antiCall" | "autoRead" | "autoReact" | "groupControls" | "aiAutoReply" | "welcomeMessage" | "commandAudit">>) {
+export async function updateFeatureSettings(profileId: number, updates: Partial<Pick<BotFeatureSettings, "antiLink" | "antiCall" | "antiCallReplyMode" | "autoRead" | "autoReact" | "groupControls" | "aiAutoReply" | "welcomeMessage" | "leaveMessage" | "antiLinkWarn" | "privateAutoReply" | "statusView" | "statusReply" | "commandAudit">>) {
   const db = await requireDb();
   await db.update(botFeatureSettings).set(updates).where(eq(botFeatureSettings.profileId, profileId));
   return getFeatureSettings(profileId);

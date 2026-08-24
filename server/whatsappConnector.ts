@@ -94,11 +94,16 @@ export function activeFeatureNames(features: Record<string, unknown> | undefined
   return Object.entries(features ?? {}).filter(([, value]) => value === true).map(([key]) => key);
 }
 
-export async function handleWelcomeMessage(profile: Pick<BotProfile, "id" | "botName">, socket: Pick<ReturnType<typeof makeWASocket>, "sendMessage">, update: { id: string; action?: string; participants?: unknown[] }) {
+export async function handleWelcomeMessage(profile: Pick<BotProfile, "id" | "botName" | "language">, socket: Pick<ReturnType<typeof makeWASocket>, "sendMessage">, update: { id: string; action?: string; participants?: unknown[] }) {
   const features = await db.getFeatureSettings(profile.id);
-  if (!features?.welcomeMessage || update.action !== "add" || !update.participants?.length) return false;
-  await socket.sendMessage(update.id, { text: `Welcome. ${profile.botName} is active in this approved group. Use /menu for available commands.` }).catch(() => undefined);
-  await db.addActivity(profile.id, "welcome_message_sent", "A configured welcome message was sent after a group member joined.");
+  const joining = update.action === "add";
+  const leaving = update.action === "remove";
+  if ((!joining || !features?.welcomeMessage) && (!leaving || !features?.leaveMessage) || !update.participants?.length) return false;
+  const text = profile.language === "ne"
+    ? joining ? `स्वागत छ। ${profile.botName} यो स्वीकृत समूहमा सक्रिय छ। कमाण्डका लागि /मेनु पठाउनुहोस्।` : `${profile.botName} ले समूहमा परिवर्तन नोट गर्‍यो। सुरक्षित समूह नियन्त्रण सक्रिय छ।`
+    : joining ? `Welcome. ${profile.botName} is active in this approved group. Use /menu for available commands.` : `${profile.botName} noted a group membership change. Safe group controls remain active.`;
+  await socket.sendMessage(update.id, { text }).catch(() => undefined);
+  await db.addActivity(profile.id, joining ? "welcome_message_sent" : "leave_message_sent", joining ? "A configured welcome message was sent after a group member joined." : "A configured leave notice was sent after a group member left.");
   return true;
 }
 
@@ -133,15 +138,26 @@ class WhatsAppConnector {
         if (oldest) session.recentMessageIds.delete(oldest);
       }
       const from = message.key.remoteJid;
-      if (!from || from === "status@broadcast") continue;
+      if (!from) continue;
       const text = safeText(message.message);
       const fromMe = message.key.fromMe === true;
       const features = await db.getFeatureSettings(profile.id);
+      if (from === "status@broadcast") {
+        if (!fromMe && features?.statusView) await session.socket.readMessages([message.key]).catch(() => undefined);
+        const statusOwner = String(message.key.participant || "");
+        if (!fromMe && features?.statusReply && statusOwner.endsWith("@s.whatsapp.net")) {
+          await session.socket.sendMessage(statusOwner, { text: profile.language === "ne" ? `तपाईंको स्टाटस हेरेँ। ${profile.botName} बाट शुभकामना।` : `I saw your status. Greetings from ${profile.botName}.` }).catch(() => undefined);
+          await db.addActivity(profile.id, "status_reply_sent", "A configured status acknowledgement was sent.");
+        }
+        continue;
+      }
       if (!fromMe && features?.autoRead) await session.socket.readMessages([message.key]).catch(() => undefined);
       if (!fromMe && features?.autoReact) await session.socket.sendMessage(from, { react: { text: "🤖", key: message.key } }).catch(() => undefined);
       const isGroup = from.endsWith("@g.us");
       if (!fromMe && isGroup && features?.antiLink && /(?:https?:\/\/|chat\.whatsapp\.com\/|www\.)/i.test(text)) {
         await session.socket.sendMessage(from, { delete: message.key }).catch(() => undefined);
+        if (features.antiLinkWarn) await session.socket.sendMessage(from, { text: profile.language === "ne" ? "समूह सुरक्षा अनुसार लिंक हटाइएको छ। कृपया मालिकको अनुमति लिएर मात्र लिंक पठाउनुहोस्।" : "A link was removed by group safety controls. Please share links only with owner approval." }).catch(() => undefined);
+        await db.addActivity(profile.id, "anti_link_applied", "A group link was handled by the enabled anti-link rule.");
         continue;
       }
       if (!fromMe && features?.aiAutoReply && !isGroup && text && !text.startsWith("/")) {
@@ -149,6 +165,11 @@ class WhatsAppConnector {
         if (ai.status === "ok" && ai.response) {
           await session.socket.sendMessage(from, { text: ai.response }, { quoted: message }).catch(() => undefined);
         }
+        continue;
+      }
+      if (!fromMe && features?.privateAutoReply && !isGroup && text && !text.startsWith("/") && !text.startsWith(".")) {
+        await session.socket.sendMessage(from, { text: profile.language === "ne" ? `सन्देशका लागि धन्यवाद। ${profile.botName} को मालिकले सकेसम्म चाँडै जवाफ दिनुहुन्छ।` : `Thanks for your message. The ${profile.botName} owner will reply when available.` }, { quoted: message }).catch(() => undefined);
+        await db.addActivity(profile.id, "private_auto_reply_sent", "A configured private-message acknowledgement was sent.");
         continue;
       }
       const ownerNumber = stripPhone(profile.phoneE164);
@@ -162,12 +183,17 @@ class WhatsAppConnector {
         senderId: senderNumber || undefined,
         uptimeSeconds: process.uptime(),
         enabledFeatures: activeFeatureNames(features),
+        language: profile.language,
       });
       if (!result.handled) continue;
       const reply = async (value: string) => session.socket.sendMessage(from, { text: value }, { quoted: message }).catch(() => undefined);
       if (result.action?.kind === "mode") {
         await db.updateBotProfile(profile.id, { publicMode: result.action.publicMode });
         await db.addActivity(profile.id, "mode_updated", result.action.publicMode ? "Public command mode enabled from WhatsApp." : "Private owner-only mode enabled from WhatsApp.");
+      }
+      if (result.action?.kind === "language") {
+        await db.updateBotProfile(profile.id, { language: result.action.language });
+        await db.addActivity(profile.id, "language_updated", `Command language changed to ${result.action.language === "ne" ? "Nepali" : "English"} from WhatsApp.`);
       }
       if (result.action?.kind === "feature") {
         await db.updateFeatureSettings(profile.id, { [result.action.feature]: result.action.enabled });
@@ -216,7 +242,10 @@ class WhatsAppConnector {
       for (const call of calls) {
         if (call.status !== "offer") continue;
         await socket.rejectCall(call.id, call.from).catch(() => undefined);
-        await socket.sendMessage(call.from, { text: "Calls are disabled for this NEP BOT profile. Please send a message instead." }).catch(() => undefined);
+        if (features.antiCallReplyMode === "localized") {
+          await socket.sendMessage(call.from, { text: profile.language === "ne" ? "यो NEP BOT प्रोफाइलमा कल बन्द छ। कृपया सन्देश पठाउनुहोस्।" : "Calls are disabled for this NEP BOT profile. Please send a message instead." }).catch(() => undefined);
+        }
+        await db.addActivity(profile.id, "anti_call_applied", features.antiCallReplyMode === "silent" ? "An incoming call was rejected silently by the enabled anti-call rule." : "An incoming call was rejected with the configured safe reply.");
       }
     });
     socket.ev.on("group-participants.update", (update) => { handleWelcomeMessage(profile, socket, update).catch(() => undefined); });

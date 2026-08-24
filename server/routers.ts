@@ -15,11 +15,17 @@ const profileIdSchema = z.number().int().positive();
 const featureSchema = z.object({
   antiLink: z.boolean().optional(),
   antiCall: z.boolean().optional(),
+  antiCallReplyMode: z.enum(["localized", "silent"]).optional(),
   autoRead: z.boolean().optional(),
   autoReact: z.boolean().optional(),
   groupControls: z.boolean().optional(),
   aiAutoReply: z.boolean().optional(),
   welcomeMessage: z.boolean().optional(),
+  leaveMessage: z.boolean().optional(),
+  antiLinkWarn: z.boolean().optional(),
+  privateAutoReply: z.boolean().optional(),
+  statusView: z.boolean().optional(),
+  statusReply: z.boolean().optional(),
   commandAudit: z.boolean().optional(),
 }).refine(value => Object.keys(value).length > 0, "Select at least one feature to update.");
 
@@ -141,6 +147,12 @@ export const appRouter = router({
       await db.updateBotProfile(profile.id, { publicMode: input.publicMode });
       await db.addActivity(profile.id, "mode_updated", input.publicMode ? "Public command mode enabled." : "Private owner-only command mode enabled.");
       return { success: true };
+    }),
+    updateLanguage: protectedProcedure.input(z.object({ profileId: profileIdSchema, language: z.enum(["en", "ne"]) })).mutation(async ({ ctx, input }) => {
+      const profile = await ownedProfile(ctx.user.id, input.profileId);
+      await db.updateBotProfile(profile.id, { language: input.language });
+      await db.addActivity(profile.id, "language_updated", `Command language changed to ${input.language === "ne" ? "Nepali" : "English"}.`);
+      return { success: true, language: input.language };
     }),
     updateFeatures: protectedProcedure.input(z.object({ profileId: profileIdSchema, settings: featureSchema })).mutation(async ({ ctx, input }) => {
       const profile = await ownedProfile(ctx.user.id, input.profileId);

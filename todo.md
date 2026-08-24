@@ -43,3 +43,17 @@
 - [x] Add connector-focused tests that mock persisted feature settings and verify welcome-message and command-audit behavior through the normal settings read path.
 - [x] Add an integration-style test covering an owner settings update followed by connector consumption of the returned advanced feature state.
 - [x] Add a single integration-style test that carries an owner feature update through the shared persisted feature object into connector behavior.
+- [x] Add a persistent per-profile Nepali or English command-language preference and owner-controlled language command.
+- [x] Add Nepali command responses and bilingual command catalog labels for the core command suite.
+- [x] Extend anti-call with configurable safe reply behavior and non-sensitive call activity logging.
+- [x] Add owner-controlled welcome, leave, anti-link warning, private-message reply, and status-reply automations with safe defaults.
+- [x] Add dashboard controls and Nepali labels for language choice and expanded personal safety automations.
+- [x] Add tests for Nepali responses, owner-only personal safety controls, and persisted feature settings.
+- [x] Add a persistent owner-configurable anti-call response mode and surface it in the dashboard and connector logic.
+- [x] Replace status viewing with a real owner-controlled status-reply automation or rename it consistently to the implemented behavior.
+- [x] Localize expanded personal safety owner-control labels and descriptions in Nepali when the profile language is Nepali.
+- [x] Conditionally render owner-control labels, descriptions, and anti-call reply options according to the selected profile language.
+- [x] Add rendering coverage that verifies owner-control copy changes for Nepali and English profile language preferences.
+- [x] Extract the rendered anti-call owner-control copy into a reusable component used by the dashboard.
+- [x] Add rendered-component tests that assert Nepali and English anti-call labels and selector options differ by profile language.
+- [x] Extend rendered anti-call localization coverage to assert both localized and silent selector options in Nepali and English.

@@ -48,6 +48,15 @@ describe("first-party WhatsApp connector", () => {
     expect(dbMock.addActivity).toHaveBeenCalledWith(77, "welcome_message_sent", expect.any(String));
   });
 
+  it("uses the persisted leave-message setting and Nepali profile language for a safe leave notice", async () => {
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    dbMock.getFeatureSettings.mockResolvedValue({ leaveMessage: true });
+
+    await expect(handleWelcomeMessage({ ...profile, language: "ne" }, { sendMessage } as never, { id: "group@g.us", action: "remove", participants: ["former@s.whatsapp.net"] })).resolves.toBe(true);
+    expect(sendMessage).toHaveBeenCalledWith("group@g.us", expect.objectContaining({ text: expect.stringContaining("समूहमा परिवर्तन") }));
+    expect(dbMock.addActivity).toHaveBeenCalledWith(77, "leave_message_sent", expect.any(String));
+  });
+
   it("uses the persisted command-audit setting when processing a live command", async () => {
     const sendMessage = vi.fn().mockResolvedValue(undefined);
     dbMock.getFeatureSettings.mockResolvedValue({ commandAudit: false, autoRead: false, autoReact: false, antiLink: false, aiAutoReply: false });

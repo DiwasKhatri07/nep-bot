@@ -150,6 +150,17 @@ describe("NEP BOT protected procedures", () => {
     expect(dbMock.addActivity).toHaveBeenCalledWith(77, "features_updated", expect.any(String));
   });
 
+  it("persists the owner-selected Nepali language and expanded personal safety settings", async () => {
+    dbMock.getBotProfileForOwner.mockResolvedValue(profile);
+    dbMock.updateFeatureSettings.mockResolvedValue({ profileId: 77, antiCall: true, antiCallReplyMode: "silent", leaveMessage: true, privateAutoReply: true, antiLinkWarn: true, statusView: false, statusReply: true });
+
+    await expect(createCaller().bot.updateLanguage({ profileId: 77, language: "ne" })).resolves.toEqual({ success: true, language: "ne" });
+    await expect(createCaller().bot.updateFeatures({ profileId: 77, settings: { antiCall: true, antiCallReplyMode: "silent", leaveMessage: true, privateAutoReply: true, antiLinkWarn: true, statusReply: true } })).resolves.toMatchObject({ leaveMessage: true, privateAutoReply: true, antiCallReplyMode: "silent", statusReply: true });
+
+    expect(dbMock.updateBotProfile).toHaveBeenCalledWith(77, { language: "ne" });
+    expect(dbMock.updateFeatureSettings).toHaveBeenCalledWith(77, { antiCall: true, antiCallReplyMode: "silent", leaveMessage: true, privateAutoReply: true, antiLinkWarn: true, statusReply: true });
+  });
+
   it("never exposes the encrypted connector session reference in dashboard list or profile responses", async () => {
     dbMock.listBotProfiles.mockResolvedValue([profile]);
     dbMock.getBotProfileForOwner.mockResolvedValue(profile);

@@ -1,0 +1,1 @@
+ALTER TABLE `bot_feature_settings` ADD `antiCallReplyMode` enum('localized','silent') DEFAULT 'localized' NOT NULL;

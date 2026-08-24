@@ -14,6 +14,8 @@ describe("NEP BOT command engine", () => {
   it("parses both slash and dot command syntax", () => {
     expect(parseCommand("/roast Alex")).toEqual({ command: "/roast", argument: "Alex" });
     expect(parseCommand(".PING")).toEqual({ command: "/ping", argument: "" });
+    expect(parseCommand("/नमस्ते")).toEqual({ command: "/hi", argument: "" });
+    expect(parseCommand("/भाषा ne")).toEqual({ command: "/language", argument: "ne" });
     expect(parseCommand("normal chat")).toBeNull();
   });
 
@@ -33,6 +35,9 @@ describe("NEP BOT command engine", () => {
     expect(executeCommand("/public", ownerContext).action).toEqual({ kind: "mode", publicMode: true });
     expect(executeCommand("/antilink on", ownerContext).action).toEqual({ kind: "feature", feature: "antiLink", enabled: true });
     expect(executeCommand("/anticall off", ownerContext).action).toEqual({ kind: "feature", feature: "antiCall", enabled: false });
+    expect(executeCommand("/welcome on", ownerContext).action).toEqual({ kind: "feature", feature: "welcomeMessage", enabled: true });
+    expect(executeCommand("/pmreply on", ownerContext).action).toEqual({ kind: "feature", feature: "privateAutoReply", enabled: true });
+    expect(executeCommand("/statusreply on", ownerContext).action).toEqual({ kind: "feature", feature: "statusReply", enabled: true });
   });
 
   it("keeps provider-backed AI and media features owner-scoped", () => {
@@ -54,5 +59,12 @@ describe("NEP BOT command engine", () => {
     expect(executeCommand("/autoreply off", ownerContext).action).toEqual({ kind: "feature", feature: "aiAutoReply", enabled: false });
     expect(executeCommand("/features", ownerContext).response).toContain("antiLink");
     expect(executeCommand("/diagnostics", ownerContext).response).toContain("listener");
+  });
+
+  it("returns Nepali core responses and lets the owner change the command language", () => {
+    const nepaliContext = { ...publicContext, language: "ne" as const };
+    expect(executeCommand("/नमस्ते", nepaliContext).response).toContain("नमस्ते");
+    expect(executeCommand("/मेनु", nepaliContext).response).toContain("कमाण्डहरू");
+    expect(executeCommand("/भाषा en", { ...nepaliContext, isOwner: true }).action).toEqual({ kind: "language", language: "en" });
   });
 });

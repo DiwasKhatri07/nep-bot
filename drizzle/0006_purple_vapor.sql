@@ -1,0 +1,1 @@
+ALTER TABLE `bot_feature_settings` ADD `statusReply` boolean DEFAULT false NOT NULL;
