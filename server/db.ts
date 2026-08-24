@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { BotFeatureSettings, botActivity, botFeatureSettings, botProfiles, InsertBotProfile, InsertUser, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -45,6 +45,11 @@ export async function getUserByOpenId(openId: string) {
 export async function listBotProfiles(ownerId: number) {
   const db = await requireDb();
   return db.select().from(botProfiles).where(eq(botProfiles.ownerId, ownerId)).orderBy(desc(botProfiles.updatedAt));
+}
+
+export async function listRestorableBotProfiles() {
+  const db = await requireDb();
+  return db.select().from(botProfiles).where(isNotNull(botProfiles.sessionStorageKey));
 }
 
 export async function getBotProfileForOwner(ownerId: number, profileId: number) {

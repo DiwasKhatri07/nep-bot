@@ -113,4 +113,16 @@ describe("NEP BOT protected procedures", () => {
     expect(dbMock.updateBotProfile).toHaveBeenCalledWith(77, { connectionStatus: "connected" });
     expect(dbMock.addActivity).toHaveBeenCalledWith(77, "connection_status_updated", "Connector status updated to connected.");
   });
+
+  it("provides owner-only command health and a dry-run response without sending a WhatsApp message", async () => {
+    dbMock.getBotProfileForOwner.mockResolvedValue({ ...profile, connectionStatus: "connected", publicMode: true });
+
+    await expect(createCaller().bot.commandHealth({ profileId: 77 })).resolves.toMatchObject({
+      connectionStatus: "connected",
+      publicMode: true,
+      listenerReady: true,
+      syntax: ["/command", ".command"],
+    });
+    await expect(createCaller().bot.testCommand({ profileId: 77, text: ".ping" })).resolves.toEqual({ handled: true, response: "Pong. NEP BOT command listener is active." });
+  });
 });

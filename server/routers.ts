@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { commandCatalog } from "./commandCatalog";
 import { generateAiReply, validatePhoneNumber } from "./botService";
+import { executeCommand } from "./commandEngine";
 import * as db from "./db";
 import { whatsappConnector } from "./whatsappConnector";
 import { COOKIE_NAME } from "@shared/const";
@@ -72,8 +73,8 @@ export const appRouter = router({
         countryDialCode: `+${validation.dialCode}`,
         nationalNumber: validation.nationalFormatted,
         connectionStatus: "ready_to_pair",
-        publicMode: false,
-        commandPreferences: JSON.stringify(["/hi", "/roast", "/menu", "/joke", "/meme", "/translate"]),
+        publicMode: true,
+        commandPreferences: JSON.stringify(commandCatalog.map((item) => item.command)),
       });
       if (!profile) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot profile could not be created." });
       await db.addActivity(profile.id, "profile_created", "Bot profile created and phone number validated.");
@@ -92,6 +93,29 @@ export const appRouter = router({
       }
     }),
     connectorConfiguration: protectedProcedure.query(() => ({ configured: true })),
+    commandHealth: protectedProcedure.input(z.object({ profileId: profileIdSchema })).query(async ({ ctx, input }) => {
+      const profile = await ownedProfile(ctx.user.id, input.profileId);
+      return {
+        connectionStatus: profile.connectionStatus,
+        publicMode: profile.publicMode,
+        commandCount: commandCatalog.length,
+        listenerReady: profile.connectionStatus === "connected",
+        syntax: ["/command", ".command"],
+      };
+    }),
+    testCommand: protectedProcedure.input(z.object({ profileId: profileIdSchema, text: z.string().trim().min(1).max(320) })).mutation(async ({ ctx, input }) => {
+      const profile = await ownedProfile(ctx.user.id, input.profileId);
+      const result = executeCommand(input.text, {
+        isOwner: true,
+        publicMode: profile.publicMode,
+        connectionStatus: profile.connectionStatus,
+        botName: profile.botName,
+        uptimeSeconds: process.uptime(),
+      });
+      if (!result.handled) return { handled: false, response: "Enter a slash or dot command, for example /ping." };
+      if (result.action?.kind === "ai") return { handled: true, response: "AI command syntax is valid. Configure the provider settings before real /ai replies are enabled." };
+      return { handled: true, response: result.response || "Command syntax is valid." };
+    }),
     syncStatus: protectedProcedure.input(z.object({ profileId: profileIdSchema })).mutation(async ({ ctx, input }) => {
       const profile = await ownedProfile(ctx.user.id, input.profileId);
       const result = await whatsappConnector.getStatus(profile);

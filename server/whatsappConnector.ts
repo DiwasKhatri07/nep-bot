@@ -6,6 +6,7 @@ import makeWASocket, { Browsers, DisconnectReason, fetchLatestBaileysVersion, ma
 import type { BotProfile } from "../drizzle/schema";
 import * as db from "./db";
 import { generateAiReply } from "./botService";
+import { executeCommand } from "./commandEngine";
 import { storageGetSignedUrl, storagePut } from "./storage";
 
 type ConnectionStatus = "ready_to_pair" | "pairing" | "connected" | "disconnected" | "error";
@@ -107,59 +108,55 @@ class WhatsAppConnector {
   private async respondToMessage(profile: BotProfile, session: ConnectorSession, event: any) {
     if (event.type !== "notify") return;
     for (const message of event.messages ?? []) {
-      if (!message.message || message.key.fromMe) continue;
+      if (!message.message) continue;
       const from = message.key.remoteJid;
       if (!from || from === "status@broadcast") continue;
       const text = safeText(message.message);
+      const fromMe = message.key.fromMe === true;
       const features = await db.getFeatureSettings(profile.id);
-      if (features?.autoRead) await session.socket.readMessages([message.key]).catch(() => undefined);
-      if (features?.autoReact) await session.socket.sendMessage(from, { react: { text: "🤖", key: message.key } }).catch(() => undefined);
+      if (!fromMe && features?.autoRead) await session.socket.readMessages([message.key]).catch(() => undefined);
+      if (!fromMe && features?.autoReact) await session.socket.sendMessage(from, { react: { text: "🤖", key: message.key } }).catch(() => undefined);
       const isGroup = from.endsWith("@g.us");
-      if (isGroup && features?.antiLink && /(?:https?:\/\/|chat\.whatsapp\.com\/|www\.)/i.test(text)) {
+      if (!fromMe && isGroup && features?.antiLink && /(?:https?:\/\/|chat\.whatsapp\.com\/|www\.)/i.test(text)) {
         await session.socket.sendMessage(from, { delete: message.key }).catch(() => undefined);
         continue;
       }
-      if (features?.aiAutoReply && !isGroup && text && !text.startsWith("/")) {
+      if (!fromMe && features?.aiAutoReply && !isGroup && text && !text.startsWith("/")) {
         const ai = await generateAiReply(text).catch(() => ({ status: "llm_error" as const }));
         if (ai.status === "ok" && ai.response) {
           await session.socket.sendMessage(from, { text: ai.response }, { quoted: message }).catch(() => undefined);
         }
         continue;
       }
-      if (!text.startsWith("/")) continue;
-      const [command, ...words] = text.toLowerCase().split(/\s+/);
-      const arg = words.join(" ").slice(0, 80);
       const ownerNumber = stripPhone(profile.phoneE164);
       const senderNumber = stripPhone(String(message.key.participant || from).split("@")[0]);
-      const isOwner = senderNumber === ownerNumber;
-      if (!profile.publicMode && !isOwner) continue;
+      const isOwner = fromMe || senderNumber === ownerNumber;
+      const result = executeCommand(text, {
+        isOwner,
+        publicMode: profile.publicMode,
+        connectionStatus: session.status,
+        botName: profile.botName,
+        senderId: senderNumber || undefined,
+        uptimeSeconds: process.uptime(),
+      });
+      if (!result.handled) continue;
       const reply = async (value: string) => session.socket.sendMessage(from, { text: value }, { quoted: message }).catch(() => undefined);
-      if (command === "/hi") await reply("Hi! I am NEP BOT. Use /menu to see available commands.");
-      else if (command === "/roast") await reply(`${arg || "You"}, your confidence has better uptime than your Wi-Fi. Friendly roast only. 🙂`);
-      else if (command === "/menu") await reply("NEP BOT commands: /hi, /roast [name], /joke, /meme, /translate [text], /ai [prompt], /public, /private, /antilink on|off");
-      else if (command === "/joke") await reply("Why did the bot bring a ladder? It wanted to reach a higher API.");
-      else if (command === "/meme") await reply("Meme mode is ready—connect an approved media provider to deliver image results.");
-      else if (command === "/translate") await reply(arg ? `Translation helper is configured in the NEP BOT dashboard. Text received: ${arg}` : "Usage: /translate [text]");
-      else if (command === "/media" && isOwner) await reply("Media helpers require an approved provider configuration. NEP BOT will not download untrusted links by default.");
-      else if ((command === "/public" || command === "/private") && isOwner) {
-        const publicMode = command === "/public";
-        await db.updateBotProfile(profile.id, { publicMode });
-        await db.addActivity(profile.id, "mode_updated", publicMode ? "Public command mode enabled from WhatsApp." : "Private mode enabled from WhatsApp.");
-        await reply(publicMode ? "Public command mode enabled." : "Private owner-only mode enabled.");
-      } else if (command === "/antilink" && isOwner) {
-        const enabled = words[0] === "on";
-        await db.updateFeatureSettings(profile.id, { antiLink: enabled });
-        await db.addActivity(profile.id, "features_updated", `Anti-link ${enabled ? "enabled" : "disabled"} from WhatsApp.`);
-        await reply(`Anti-link ${enabled ? "enabled" : "disabled"}.`);
-      } else if (command === "/group" && isOwner) {
-        await reply(features?.groupControls ? "Group controls are enabled. Use the owner dashboard to manage approved group settings." : "Group controls are disabled in the owner dashboard.");
-      } else if (command === "/ai") {
-        if (!isOwner) await reply("The AI command is owner controlled.");
-        else if (!arg) await reply("Usage: /ai [prompt]");
-        else {
-          const ai = await generateAiReply(arg).catch(() => ({ status: "llm_error" as const, error: "AI provider request failed." }));
-          await reply(ai.status === "ok" && ai.response ? ai.response : ai.error || "AI provider is not configured.");
-        }
+      if (result.action?.kind === "mode") {
+        await db.updateBotProfile(profile.id, { publicMode: result.action.publicMode });
+        await db.addActivity(profile.id, "mode_updated", result.action.publicMode ? "Public command mode enabled from WhatsApp." : "Private owner-only mode enabled from WhatsApp.");
+      }
+      if (result.action?.kind === "feature") {
+        await db.updateFeatureSettings(profile.id, { [result.action.feature]: result.action.enabled });
+        await db.addActivity(profile.id, "features_updated", `${result.action.feature} ${result.action.enabled ? "enabled" : "disabled"} from WhatsApp.`);
+      }
+      if (result.action?.kind === "ai") {
+        const ai = await generateAiReply(result.action.prompt).catch(() => ({ status: "llm_error" as const, error: "AI provider request failed." }));
+        await reply(ai.status === "ok" && ai.response ? ai.response : ai.error || "AI provider is not configured.");
+      } else if (result.response) {
+        await reply(result.response);
+      }
+      if (result.command) {
+        await db.addActivity(profile.id, "command_handled", `Handled ${result.command} from ${isOwner ? "owner" : "chat"}.`);
       }
     }
   }
@@ -234,6 +231,18 @@ class WhatsAppConnector {
       return { configured: true, connectionStatus: "disconnected" as const };
     }
     return { configured: true, connectionStatus: profile.connectionStatus === "error" ? "ready_to_pair" as const : profile.connectionStatus as ConnectionStatus };
+  }
+
+  async restorePersistedSessions() {
+    const profiles = await db.listRestorableBotProfiles();
+    await Promise.all(profiles.map(async (profile) => {
+      try {
+        await this.start(profile);
+      } catch {
+        await db.updateBotProfile(profile.id, { connectionStatus: "error" });
+        await db.addActivity(profile.id, "connector_restore_failed", "Stored linked-device session could not be restored.");
+      }
+    }));
   }
 
   async disconnect(profile: BotProfile) {
