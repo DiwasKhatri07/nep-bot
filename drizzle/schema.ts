@@ -37,6 +37,8 @@ export const botFeatureSettings = mysqlTable("bot_feature_settings", {
   autoReact: boolean("autoReact").default(false).notNull(),
   groupControls: boolean("groupControls").default(false).notNull(),
   aiAutoReply: boolean("aiAutoReply").default(false).notNull(),
+  welcomeMessage: boolean("welcomeMessage").default(false).notNull(),
+  commandAudit: boolean("commandAudit").default(true).notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 

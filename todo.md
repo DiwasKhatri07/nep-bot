@@ -32,3 +32,13 @@
 - [x] Add dashboard command health, command mode visibility, and a safe owner-only command test action.
 - [ ] Verify live commands against a user-confirmed paired session and record non-sensitive command activity.
 - [x] Support fresh paired-device command events delivered as either notify or append updates while preventing replayed history from triggering commands.
+- [x] Define and document safe additional public commands and owner-only controls for the expanded NEP BOT suite.
+- [x] Add public utility, information, and interaction commands to the shared registry with consistent responses.
+- [x] Add owner-only commands for moderation mode, automation overview, feature status, command help, and session diagnostics.
+- [x] Add persistent advanced owner feature switches and surface their states in the dashboard.
+- [x] Add tests for expanded command permissions, actions, and feature-toggle validation.
+- [x] Add router-level tests that validate owner-only updates to welcome-message and command-audit settings and return the persisted values safely.
+- [x] Verify the connector receives the newly persisted advanced feature states through the standard feature-settings path.
+- [x] Add connector-focused tests that mock persisted feature settings and verify welcome-message and command-audit behavior through the normal settings read path.
+- [x] Add an integration-style test covering an owner settings update followed by connector consumption of the returned advanced feature state.
+- [x] Add a single integration-style test that carries an owner feature update through the shared persisted feature object into connector behavior.

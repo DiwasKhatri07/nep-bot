@@ -90,6 +90,18 @@ function stripPhone(value: string) {
   return value.replace(/\D/g, "");
 }
 
+export function activeFeatureNames(features: Record<string, unknown> | undefined) {
+  return Object.entries(features ?? {}).filter(([, value]) => value === true).map(([key]) => key);
+}
+
+export async function handleWelcomeMessage(profile: Pick<BotProfile, "id" | "botName">, socket: Pick<ReturnType<typeof makeWASocket>, "sendMessage">, update: { id: string; action?: string; participants?: unknown[] }) {
+  const features = await db.getFeatureSettings(profile.id);
+  if (!features?.welcomeMessage || update.action !== "add" || !update.participants?.length) return false;
+  await socket.sendMessage(update.id, { text: `Welcome. ${profile.botName} is active in this approved group. Use /menu for available commands.` }).catch(() => undefined);
+  await db.addActivity(profile.id, "welcome_message_sent", "A configured welcome message was sent after a group member joined.");
+  return true;
+}
+
 class WhatsAppConnector {
   private sessions = new Map<number, ConnectorSession>();
 
@@ -149,6 +161,7 @@ class WhatsAppConnector {
         botName: profile.botName,
         senderId: senderNumber || undefined,
         uptimeSeconds: process.uptime(),
+        enabledFeatures: activeFeatureNames(features),
       });
       if (!result.handled) continue;
       const reply = async (value: string) => session.socket.sendMessage(from, { text: value }, { quoted: message }).catch(() => undefined);
@@ -166,7 +179,7 @@ class WhatsAppConnector {
       } else if (result.response) {
         await reply(result.response);
       }
-      if (result.command) {
+      if (result.command && features?.commandAudit) {
         await db.addActivity(profile.id, "command_handled", `Handled ${result.command} from ${isOwner ? "owner" : "chat"}.`);
       }
     }
@@ -206,6 +219,7 @@ class WhatsAppConnector {
         await socket.sendMessage(call.from, { text: "Calls are disabled for this NEP BOT profile. Please send a message instead." }).catch(() => undefined);
       }
     });
+    socket.ev.on("group-participants.update", (update) => { handleWelcomeMessage(profile, socket, update).catch(() => undefined); });
     socket.ev.on("connection.update", async ({ connection, qr, lastDisconnect }) => {
       if (qr || connection === "open") resolveReady();
       if (connection === "open") {

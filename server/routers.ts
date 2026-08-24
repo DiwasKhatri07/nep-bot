@@ -19,6 +19,8 @@ const featureSchema = z.object({
   autoReact: z.boolean().optional(),
   groupControls: z.boolean().optional(),
   aiAutoReply: z.boolean().optional(),
+  welcomeMessage: z.boolean().optional(),
+  commandAudit: z.boolean().optional(),
 }).refine(value => Object.keys(value).length > 0, "Select at least one feature to update.");
 
 async function ownedProfile(userId: number, profileId: number) {

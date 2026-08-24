@@ -1,6 +1,6 @@
 export type CommandAction =
   | { kind: "mode"; publicMode: boolean }
-  | { kind: "feature"; feature: "antiLink" | "antiCall" | "autoRead" | "autoReact" | "groupControls"; enabled: boolean }
+  | { kind: "feature"; feature: "antiLink" | "antiCall" | "autoRead" | "autoReact" | "groupControls" | "aiAutoReply"; enabled: boolean }
   | { kind: "ai"; prompt: string };
 
 export type CommandContext = {
@@ -10,6 +10,7 @@ export type CommandContext = {
   botName: string;
   senderId?: string;
   uptimeSeconds?: number;
+  enabledFeatures?: string[];
 };
 
 export type CommandResult = {
@@ -19,8 +20,8 @@ export type CommandResult = {
   command?: string;
 };
 
-const publicCommands = new Set(["/hi", "/help", "/menu", "/commands", "/ping", "/status", "/about", "/joke", "/roast", "/quote", "/fact", "/rules", "/id", "/meme", "/translate"]);
-const ownerCommands = new Set(["/public", "/private", "/antilink", "/anticall", "/autoread", "/autoreact", "/group", "/media", "/ai", "/uptime", "/settings"]);
+const publicCommands = new Set(["/hi", "/help", "/menu", "/commands", "/ping", "/status", "/about", "/joke", "/roast", "/quote", "/fact", "/rules", "/id", "/meme", "/translate", "/time", "/date", "/dice", "/flip", "/8ball", "/choose", "/echo", "/version", "/privacy", "/support"]);
+const ownerCommands = new Set(["/public", "/private", "/lock", "/unlock", "/mode", "/antilink", "/anticall", "/autoread", "/autoreact", "/groupmode", "/autoreply", "/group", "/media", "/ai", "/uptime", "/settings", "/features", "/automations", "/diagnostics", "/profile", "/activity", "/reconnect", "/disconnect"]);
 
 export const commandDefinitions = [
   { command: "/hi", group: "Essentials", description: "Greeting and quick start.", access: "Public" },
@@ -29,13 +30,15 @@ export const commandDefinitions = [
   { command: "/status", group: "Utilities", description: "Show connection and command-mode state.", access: "Public" },
   { command: "/roast [name]", group: "Fun", description: "Friendly, non-abusive roast.", access: "Public" },
   { command: "/joke · /quote · /fact", group: "Fun", description: "Short safe text responses.", access: "Public" },
+  { command: "/dice · /flip · /8ball · /choose", group: "Fun", description: "Safe interactive utility responses.", access: "Public" },
+  { command: "/time · /date · /version · /privacy", group: "Utilities", description: "Basic bot information and privacy guidance.", access: "Public" },
   { command: "/translate [text]", group: "Utilities", description: "Translation helper guidance.", access: "Public" },
-  { command: "/public · /private", group: "Owner controls", description: "Set who can run public commands.", access: "Owner" },
+  { command: "/public · /private · /lock · /unlock", group: "Owner controls", description: "Set who can run public commands.", access: "Owner" },
   { command: "/antilink on|off", group: "Moderation", description: "Set approved group link moderation.", access: "Owner" },
-  { command: "/anticall on|off", group: "Moderation", description: "Set controlled incoming-call handling.", access: "Owner" },
-  { command: "/autoread on|off", group: "Automation", description: "Set eligible message read receipts.", access: "Owner" },
-  { command: "/autoreact on|off", group: "Automation", description: "Set safe reaction automation.", access: "Owner" },
-  { command: "/group · /settings · /uptime", group: "Owner controls", description: "Show scoped connector and control status.", access: "Owner" },
+  { command: "/anticall · /groupmode on|off", group: "Moderation", description: "Set call handling and approved group controls.", access: "Owner" },
+  { command: "/autoread · /autoreact · /autoreply", group: "Automation", description: "Set safe response automations.", access: "Owner" },
+  { command: "/features · /automations · /diagnostics", group: "Owner controls", description: "Inspect configured safeguards and listener state.", access: "Owner" },
+  { command: "/profile · /activity · /reconnect", group: "Owner controls", description: "Review profile and session guidance.", access: "Owner" },
   { command: "/ai [prompt] · /media [url]", group: "Provider features", description: "Use configured approved providers only.", access: "Owner" },
 ] as const;
 
@@ -68,7 +71,7 @@ export function executeCommand(rawText: string, context: CommandContext): Comman
     return { handled: true, command, response: "This bot is currently in private owner-only mode." };
   }
 
-  const menu = "Commands: /hi, /help, /ping, /status, /joke, /roast [name], /quote, /fact, /rules, /id, /translate [text]. Owner: /public, /private, /antilink on|off, /anticall on|off, /autoread on|off, /autoreact on|off, /group, /settings, /uptime, /ai [prompt].";
+  const menu = "Commands: /hi, /help, /ping, /status, /joke, /roast [name], /quote, /fact, /dice, /flip, /8ball [question], /choose a|b, /time, /date, /echo [text], /translate [text]. Owner: /public, /private, /features, /diagnostics, /antilink on|off, /anticall on|off, /groupmode on|off, /autoread on|off, /autoreact on|off, /autoreply on|off, /ai [prompt].";
   if (command === "/hi") return { handled: true, command, response: `Hi! I am ${context.botName}. Send /menu to see what I can do.` };
   if (command === "/help" || command === "/menu" || command === "/commands") return { handled: true, command, response: menu };
   if (command === "/ping") return { handled: true, command, response: "Pong. NEP BOT command listener is active." };
@@ -82,17 +85,34 @@ export function executeCommand(rawText: string, context: CommandContext): Comman
   if (command === "/id") return { handled: true, command, response: context.senderId ? `Your chat identifier: ${context.senderId}` : "Your chat identifier is unavailable in this message." };
   if (command === "/meme") return { handled: true, command, response: "Meme delivery needs an approved media provider. Text command handling is online." };
   if (command === "/translate") return { handled: true, command, response: argument ? `Translation request received: ${argument}. Configure an approved translation provider to return a translated result.` : "Usage: /translate [text]" };
-  if (command === "/public") return { handled: true, command, response: "Public command mode enabled.", action: { kind: "mode", publicMode: true } };
-  if (command === "/private") return { handled: true, command, response: "Private owner-only mode enabled.", action: { kind: "mode", publicMode: false } };
+  if (command === "/time" || command === "/date") return { handled: true, command, response: new Date().toLocaleString("en-US", { dateStyle: command === "/date" ? "full" : "medium", timeStyle: command === "/time" ? "short" : undefined, timeZone: "UTC" }) + " UTC" };
+  if (command === "/dice") return { handled: true, command, response: `🎲 You rolled ${Math.floor(Math.random() * 6) + 1}.` };
+  if (command === "/flip") return { handled: true, command, response: `🪙 ${Math.random() < 0.5 ? "Heads" : "Tails"}.` };
+  if (command === "/8ball") return { handled: true, command, response: argument ? ["Signs point to yes.", "Ask again after a short pause.", "The outlook is promising.", "Better not tell you now."][argument.length % 4] : "Usage: /8ball [question]" };
+  if (command === "/choose") {
+    const choices = argument.split("|").map((item) => item.trim()).filter(Boolean).slice(0, 8);
+    return { handled: true, command, response: choices.length >= 2 ? `I choose: ${choices[Math.floor(Math.random() * choices.length)]}.` : "Usage: /choose option A | option B" };
+  }
+  if (command === "/echo") return { handled: true, command, response: argument ? argument : "Usage: /echo [text]" };
+  if (command === "/version") return { handled: true, command, response: "NEP BOT command suite: linked-device control edition." };
+  if (command === "/privacy") return { handled: true, command, response: "NEP BOT keeps credentials and session material server-side. It does not include bulk messaging workflows." };
+  if (command === "/support") return { handled: true, command, response: "For bot setup, use the owner dashboard to review pairing, connection health, and feature switches." };
+  if (command === "/public" || command === "/unlock") return { handled: true, command, response: "Public command mode enabled.", action: { kind: "mode", publicMode: true } };
+  if (command === "/private" || command === "/lock") return { handled: true, command, response: "Private owner-only mode enabled.", action: { kind: "mode", publicMode: false } };
+  if (command === "/mode") return { handled: true, command, response: `Command mode is ${context.publicMode ? "public" : "owner-only"}.` };
   if (command === "/group") return { handled: true, command, response: "Group controls are managed from the owner dashboard and apply only where you approve them." };
-  if (command === "/settings") return { handled: true, command, response: `Mode: ${context.publicMode ? "public" : "owner-only"}. Connection: ${context.connectionStatus.replace(/_/g, " ")}. Use the dashboard for feature switches.` };
+  if (command === "/settings" || command === "/features" || command === "/automations") return { handled: true, command, response: `Mode: ${context.publicMode ? "public" : "owner-only"}. Connection: ${context.connectionStatus.replace(/_/g, " ")}. Enabled features: ${context.enabledFeatures?.length ? context.enabledFeatures.join(", ") : "none"}.` };
+  if (command === "/diagnostics") return { handled: true, command, response: `Diagnostics: listener ${context.connectionStatus.replace(/_/g, " ")}; uptime ${Math.max(0, Math.floor((context.uptimeSeconds ?? 0) / 60))} minutes; command syntax /command or .command.` };
+  if (command === "/profile") return { handled: true, command, response: `Profile: ${context.botName}. Mode: ${context.publicMode ? "public" : "owner-only"}. Use the owner dashboard for private connection details.` };
+  if (command === "/activity") return { handled: true, command, response: "Recent non-sensitive bot activity is available in the owner dashboard." };
+  if (command === "/reconnect" || command === "/disconnect") return { handled: true, command, response: "For secure session changes, use Refresh connector status or Secure logout in the owner dashboard." };
   if (command === "/uptime") return { handled: true, command, response: `Connector process uptime: ${Math.max(0, Math.floor((context.uptimeSeconds ?? 0) / 60))} minutes.` };
   if (command === "/media") return { handled: true, command, response: "Media helpers require an approved provider and do not fetch untrusted links by default." };
   if (command === "/ai") return argument ? { handled: true, command, action: { kind: "ai", prompt: argument } } : { handled: true, command, response: "Usage: /ai [prompt]" };
 
-  const features: Record<string, CommandAction["kind"]> = { "/antilink": "feature", "/anticall": "feature", "/autoread": "feature", "/autoreact": "feature" };
+  const features: Record<string, CommandAction["kind"]> = { "/antilink": "feature", "/anticall": "feature", "/autoread": "feature", "/autoreact": "feature", "/groupmode": "feature", "/autoreply": "feature" };
   if (features[command] === "feature") {
-    const names = { "/antilink": "antiLink", "/anticall": "antiCall", "/autoread": "autoRead", "/autoreact": "autoReact" } as const;
+    const names = { "/antilink": "antiLink", "/anticall": "antiCall", "/autoread": "autoRead", "/autoreact": "autoReact", "/groupmode": "groupControls", "/autoreply": "aiAutoReply" } as const;
     const check = toggleArgument(argument, `Usage: ${command} on|off`);
     if (check.usage) return { handled: true, command, response: check.usage };
     const feature = names[command as keyof typeof names];

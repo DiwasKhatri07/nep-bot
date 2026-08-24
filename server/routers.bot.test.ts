@@ -125,4 +125,28 @@ describe("NEP BOT protected procedures", () => {
     });
     await expect(createCaller().bot.testCommand({ profileId: 77, text: ".ping" })).resolves.toEqual({ handled: true, response: "Pong. NEP BOT command listener is active." });
   });
+
+  it("persists advanced owner feature switches and returns their saved values", async () => {
+    dbMock.getBotProfileForOwner.mockResolvedValue(profile);
+    dbMock.updateFeatureSettings.mockResolvedValue({
+      id: 9,
+      profileId: 77,
+      antiLink: false,
+      antiCall: false,
+      autoRead: false,
+      autoReact: false,
+      groupControls: false,
+      aiAutoReply: false,
+      welcomeMessage: true,
+      commandAudit: false,
+      updatedAt: new Date(),
+    });
+
+    await expect(createCaller().bot.updateFeatures({ profileId: 77, settings: { welcomeMessage: true, commandAudit: false } })).resolves.toMatchObject({
+      welcomeMessage: true,
+      commandAudit: false,
+    });
+    expect(dbMock.updateFeatureSettings).toHaveBeenCalledWith(77, { welcomeMessage: true, commandAudit: false });
+    expect(dbMock.addActivity).toHaveBeenCalledWith(77, "features_updated", expect.any(String));
+  });
 });

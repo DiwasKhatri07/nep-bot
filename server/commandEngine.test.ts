@@ -40,4 +40,19 @@ describe("NEP BOT command engine", () => {
     expect(executeCommand("/ai hello", { ...publicContext, isOwner: true }).action).toEqual({ kind: "ai", prompt: "hello" });
     expect(executeCommand("/media https://example.com", { ...publicContext, isOwner: true }).response).toContain("approved provider");
   });
+
+  it("handles expanded public utility and interaction commands", () => {
+    expect(executeCommand("/echo hello team", publicContext).response).toBe("hello team");
+    expect(executeCommand("/choose green | blue", publicContext).response).toMatch(/^I choose: (green|blue)\.$/);
+    expect(executeCommand("/8ball will it work", publicContext).response).toBeTruthy();
+    expect(executeCommand("/privacy", publicContext).response).toContain("server-side");
+  });
+
+  it("allows the owner to control expanded automations and inspect diagnostics", () => {
+    const ownerContext = { ...publicContext, isOwner: true, enabledFeatures: ["antiLink", "commandAudit"] };
+    expect(executeCommand("/groupmode on", ownerContext).action).toEqual({ kind: "feature", feature: "groupControls", enabled: true });
+    expect(executeCommand("/autoreply off", ownerContext).action).toEqual({ kind: "feature", feature: "aiAutoReply", enabled: false });
+    expect(executeCommand("/features", ownerContext).response).toContain("antiLink");
+    expect(executeCommand("/diagnostics", ownerContext).response).toContain("listener");
+  });
 });
