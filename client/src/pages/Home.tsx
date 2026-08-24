@@ -152,7 +152,7 @@ export default function Home() {
         <Card className="border-border/70 bg-card/80 shadow-xl shadow-black/10"><CardContent className="p-5 md:p-7"><div className="mb-6 flex items-start justify-between"><div><p className="mono text-[11px] uppercase tracking-[.15em] text-primary">Linked-device flow</p><h2 className="mt-2 font-display text-2xl font-bold tracking-tight">Pair safely, step by step</h2></div><KeyRound className="size-5 text-primary" /></div>
           <div className="space-y-3">{[
             { n: "01", title: "Create & validate", text: "Save a profile only after strict E.164 validation succeeds.", done: Boolean(selectedProfile) },
-            { n: "02", title: "Request a temporary code", text: "The connector returns a short-lived code. NEP BOT never stores it.", done: Boolean(pairingCode) },
+            { n: "02", title: "Request a temporary code", text: "NEP BOT starts a server-side linked-device session and shows a short-lived code without storing it.", done: Boolean(pairingCode) },
             { n: "03", title: "Confirm in WhatsApp", text: "On your phone, use Linked Devices → Link with phone number.", done: selectedProfile?.connectionStatus === "connected" },
           ].map((step) => <div key={step.n} className="flex gap-4 rounded-2xl border border-border/70 bg-background/30 p-4"><span className={cn("mono grid size-8 shrink-0 place-items-center rounded-lg text-xs", step.done ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>{step.done ? <Check className="size-4" /> : step.n}</span><div className="min-w-0"><p className="text-sm font-semibold">{step.title}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{step.text}</p></div></div>)}
           </div>

@@ -72,6 +72,11 @@ export async function updateBotProfile(profileId: number, updates: Partial<Pick<
   await db.update(botProfiles).set(updates).where(eq(botProfiles.id, profileId));
 }
 
+export async function updateSessionStorageKey(profileId: number, sessionStorageKey: string | null) {
+  const db = await requireDb();
+  await db.update(botProfiles).set({ sessionStorageKey }).where(eq(botProfiles.id, profileId));
+}
+
 export async function updateFeatureSettings(profileId: number, updates: Partial<Pick<BotFeatureSettings, "antiLink" | "antiCall" | "autoRead" | "autoReact" | "groupControls" | "aiAutoReply">>) {
   const db = await requireDb();
   await db.update(botFeatureSettings).set(updates).where(eq(botFeatureSettings.profileId, profileId));

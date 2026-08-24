@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { dbMock, serviceMock } = vi.hoisted(() => ({
+const { dbMock, serviceMock, connectorMock } = vi.hoisted(() => ({
   dbMock: {
     createBotProfile: vi.fn(),
     addActivity: vi.fn(),
@@ -13,15 +13,17 @@ const { dbMock, serviceMock } = vi.hoisted(() => ({
   },
   serviceMock: {
     validatePhoneNumber: vi.fn(),
-    requestPairingCode: vi.fn(),
-    disconnectConnector: vi.fn(),
-    getConnectorStatus: vi.fn(),
-    getConnectorConfiguration: vi.fn(),
+  },
+  connectorMock: {
+    requestPairing: vi.fn(),
+    getStatus: vi.fn(),
+    disconnect: vi.fn(),
   },
 }));
 
 vi.mock("./db", () => dbMock);
 vi.mock("./botService", () => serviceMock);
+vi.mock("./whatsappConnector", () => ({ whatsappConnector: connectorMock }));
 
 import { appRouter } from "./routers";
 
@@ -51,6 +53,7 @@ const profile = {
   countryIso: "NP",
   countryDialCode: "+977",
   nationalNumber: "984-1234567",
+  sessionStorageKey: "connector-sessions/77/auth_opaque.json",
   connectionStatus: "ready_to_pair",
   publicMode: false,
   commandPreferences: "[]",
@@ -80,7 +83,8 @@ describe("NEP BOT protected procedures", () => {
       nationalNumber: "984 123 4567",
     });
 
-    expect(result).toEqual(profile);
+    expect(result).toEqual(expect.objectContaining({ id: 77, phoneE164: "+9779841234567" }));
+    expect(result).not.toHaveProperty("sessionStorageKey");
     expect(dbMock.createBotProfile).toHaveBeenCalledWith(expect.objectContaining({ phoneE164: "+9779841234567", ownerId: 23 }));
     expect(dbMock.addActivity).toHaveBeenCalledWith(77, "profile_created", expect.any(String));
   });
@@ -89,22 +93,21 @@ describe("NEP BOT protected procedures", () => {
     dbMock.getBotProfileForOwner.mockResolvedValue(undefined);
 
     await expect(createCaller().bot.requestPairing({ profileId: 77 })).rejects.toMatchObject({ code: "NOT_FOUND" });
-    expect(serviceMock.requestPairingCode).not.toHaveBeenCalled();
+    expect(connectorMock.requestPairing).not.toHaveBeenCalled();
   });
 
-  it("records a safe error state when the configured connector cannot issue a code", async () => {
+  it("records a safe error state when the linked-device connector cannot issue a code", async () => {
     dbMock.getBotProfileForOwner.mockResolvedValue(profile);
-    serviceMock.requestPairingCode.mockResolvedValue({ status: "connector_not_configured", error: "Connector unavailable" });
+    connectorMock.requestPairing.mockRejectedValue(new Error("Connector unavailable"));
 
     await expect(createCaller().bot.requestPairing({ profileId: 77 })).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
-    expect(dbMock.updateBotProfile).toHaveBeenNthCalledWith(1, 77, { connectionStatus: "pairing" });
-    expect(dbMock.updateBotProfile).toHaveBeenNthCalledWith(2, 77, { connectionStatus: "error" });
+    expect(dbMock.updateBotProfile).toHaveBeenCalledWith(77, { connectionStatus: "error" });
     expect(dbMock.addActivity).toHaveBeenCalledWith(77, "pairing_failed", expect.any(String));
   });
 
   it("syncs a verified connector state and records only a non-sensitive activity summary", async () => {
     dbMock.getBotProfileForOwner.mockResolvedValue(profile);
-    serviceMock.getConnectorStatus.mockResolvedValue({ configured: true, connectionStatus: "connected" });
+    connectorMock.getStatus.mockResolvedValue({ configured: true, connectionStatus: "connected" });
 
     await expect(createCaller().bot.syncStatus({ profileId: 77 })).resolves.toEqual({ configured: true, connectionStatus: "connected", error: undefined });
     expect(dbMock.updateBotProfile).toHaveBeenCalledWith(77, { connectionStatus: "connected" });

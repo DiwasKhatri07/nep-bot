@@ -1,8 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { commandCatalog } from "./commandCatalog";
-import { disconnectConnector, generateAiReply, getConnectorConfiguration, getConnectorStatus, requestPairingCode, validatePhoneNumber } from "./botService";
+import { generateAiReply, validatePhoneNumber } from "./botService";
 import * as db from "./db";
+import { whatsappConnector } from "./whatsappConnector";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
@@ -25,6 +26,11 @@ async function ownedProfile(userId: number, profileId: number) {
   return profile;
 }
 
+function clientProfile<T extends { sessionStorageKey?: string | null }>(profile: T) {
+  const { sessionStorageKey: _sessionStorageKey, ...safeProfile } = profile;
+  return safeProfile;
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -37,12 +43,12 @@ export const appRouter = router({
   }),
   bot: router({
     catalog: protectedProcedure.query(() => commandCatalog),
-    list: protectedProcedure.query(({ ctx }) => db.listBotProfiles(ctx.user.id)),
+    list: protectedProcedure.query(async ({ ctx }) => (await db.listBotProfiles(ctx.user.id)).map(clientProfile)),
     activity: protectedProcedure.input(z.object({ profileId: profileIdSchema.optional() }).optional()).query(({ ctx, input }) => db.listActivity(ctx.user.id, input?.profileId)),
     profile: protectedProcedure.input(z.object({ profileId: profileIdSchema })).query(async ({ ctx, input }) => {
       const profile = await ownedProfile(ctx.user.id, input.profileId);
       const features = await db.getFeatureSettings(profile.id);
-      return { profile, features };
+      return { profile: clientProfile(profile), features };
     }),
     create: protectedProcedure.input(z.object({
       botName: botNameSchema,
@@ -71,39 +77,38 @@ export const appRouter = router({
       });
       if (!profile) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Bot profile could not be created." });
       await db.addActivity(profile.id, "profile_created", "Bot profile created and phone number validated.");
-      return profile;
+      return clientProfile(profile);
     }),
     requestPairing: protectedProcedure.input(z.object({ profileId: profileIdSchema })).mutation(async ({ ctx, input }) => {
       const profile = await ownedProfile(ctx.user.id, input.profileId);
-      await db.updateBotProfile(profile.id, { connectionStatus: "pairing" });
-      const connector = await requestPairingCode(profile.phoneE164);
-      if (connector.status !== "pairing_code_generated" || !connector.pairingCode) {
+      try {
+        const connector = await whatsappConnector.requestPairing(profile);
+        await db.addActivity(profile.id, "pairing_code_issued", "A temporary pairing code was issued. It was not stored.");
+        return connector;
+      } catch (error) {
         await db.updateBotProfile(profile.id, { connectionStatus: "error" });
-        await db.addActivity(profile.id, "pairing_failed", "Pairing request could not reach the configured connector.");
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: connector.error || "Pairing could not be requested." });
+        await db.addActivity(profile.id, "pairing_failed", "Pairing request could not be completed by the linked-device connector.");
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: error instanceof Error ? error.message : "Pairing could not be requested." });
       }
-      await db.addActivity(profile.id, "pairing_code_issued", "A temporary pairing code was issued. It was not stored.");
-      return { pairingCode: connector.pairingCode, expiresInSeconds: 60 };
     }),
-    connectorConfiguration: protectedProcedure.query(() => getConnectorConfiguration()),
+    connectorConfiguration: protectedProcedure.query(() => ({ configured: true })),
     syncStatus: protectedProcedure.input(z.object({ profileId: profileIdSchema })).mutation(async ({ ctx, input }) => {
       const profile = await ownedProfile(ctx.user.id, input.profileId);
-      const result = await getConnectorStatus(profile.phoneE164);
-      if (!result.configured) return { configured: false, connectionStatus: profile.connectionStatus };
-      const nextStatus = result.connectionStatus ?? "error";
+      const result = await whatsappConnector.getStatus(profile);
+      const nextStatus = result.connectionStatus;
       if (profile.connectionStatus !== nextStatus) {
         await db.updateBotProfile(profile.id, { connectionStatus: nextStatus });
         await db.addActivity(profile.id, "connection_status_updated", `Connector status updated to ${nextStatus.replace(/_/g, " ")}.`);
       }
-      return { configured: true, connectionStatus: nextStatus, error: result.error };
+      return { configured: true, connectionStatus: nextStatus };
     }),
     disconnect: protectedProcedure.input(z.object({ profileId: profileIdSchema })).mutation(async ({ ctx, input }) => {
       const profile = await ownedProfile(ctx.user.id, input.profileId);
-      const connector = await disconnectConnector(profile.phoneE164);
-      if (connector.status !== "disconnected") throw new TRPCError({ code: "PRECONDITION_FAILED", message: connector.error || "Connector disconnect failed." });
-      await db.updateBotProfile(profile.id, { connectionStatus: "disconnected" });
-      await db.addActivity(profile.id, "session_disconnected", "The connector confirmed that the session was disconnected.");
-      return { success: true };
+      try {
+        return await whatsappConnector.disconnect(profile);
+      } catch (error) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: error instanceof Error ? error.message : "Connector disconnect failed." });
+      }
     }),
     updateMode: protectedProcedure.input(z.object({ profileId: profileIdSchema, publicMode: z.boolean() })).mutation(async ({ ctx, input }) => {
       const profile = await ownedProfile(ctx.user.id, input.profileId);

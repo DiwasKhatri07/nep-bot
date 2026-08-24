@@ -2,7 +2,7 @@
 
 NEP BOT is an owner-controlled WhatsApp onboarding and management dashboard. It validates phone numbers using country-aware E.164 rules, persists non-sensitive bot configuration, guides linked-device pairing, and presents a clear command, activity, and moderation-control workspace.
 
-> **Important:** The dashboard is designed to control a separate WhatsApp connector. It does not store session credentials or pairing codes. A linked-device connector must remain online independently of the web dashboard.
+> **Important:** The dashboard now includes a first-party linked-device connector. It does not display or store pairing codes in the database, and it encrypts server-side session snapshots. A linked-device session still needs an always-on runtime for reliable long-term operation.
 
 ## What is included
 
@@ -10,16 +10,16 @@ NEP BOT is an owner-controlled WhatsApp onboarding and management dashboard. It 
 | --- | --- |
 | Dashboard | Responsive overview, bot profiles, guided setup, activity, command catalog, and owner controls. |
 | Number validation | National-number formatting in the browser plus strict server-side validation and E.164 normalization in Python. |
-| Pairing | A verified profile can request a short-lived pairing code from a configured connector. Codes are returned only to the current owner session and are never written to the database. |
+| Pairing | A verified profile can request a short-lived pairing code from the first-party connector. Codes are returned only to the current owner session and are never written to the database. |
 | Persistence | Bot profile settings, country-normalized setup data, feature switches, public/private mode, command preferences, and non-sensitive activity. |
 | Controls | Owner-scoped public/private mode, anti-link, anti-call, auto-read, auto-react, group controls, and AI auto-reply preference. |
-| Safety | No bulk-messaging workflow, no session exports, strict input lengths, per-owner profile checks, and server-side secret handling. |
+| Safety | No bulk-messaging workflow, no session exports, strict input lengths, per-owner profile checks, encrypted server-side session snapshots, and server-side secret handling. |
 
 ## Runtime architecture
 
-The website runs as a Node/React application. The Node server invokes `python_service/nep_bot_service.py` for phone validation and connector orchestration. The Python service uses `phonenumbers` to confirm that a selected country, calling code, and national number resolve to a valid E.164 number.
+The website runs as a Node/React application. The Node server invokes `python_service/nep_bot_service.py` for phone validation and optional LLM-provider work. The Python service uses `phonenumbers` to confirm that a selected country, calling code, and national number resolve to a valid E.164 number.
 
-The WhatsApp connector itself is intentionally separate. A linked-device session is a long-lived connection, whereas the dashboard is designed for ordinary request/response work. Run the connector as a single-owner always-on service, keep its credentials in its own secret store, and connect it to this dashboard through the contract below.
+`server/whatsappConnector.ts` contains the first-party linked-device connector. It creates a Baileys session only after an owner requests pairing, accepts country-code-normalized digits-only numbers, and handles pairing, connection state, logout, basic commands, and controlled automations. Raw auth files are held temporarily on the server, encrypted before a snapshot is sent to server-side object storage, and referenced by an opaque key; the dashboard database never receives the raw session material or pairing code.
 
 ## Environment variables
 
@@ -27,49 +27,17 @@ The WhatsApp connector itself is intentionally separate. A linked-device session
 | --- | --- | --- |
 | `DATABASE_URL` | Platform-provided | Persistent dashboard data. |
 | `JWT_SECRET` | Platform-provided | Secure application sessions. |
-| `NEP_CONNECTOR_URL` | For real pairing | HTTPS base URL of the always-on WhatsApp connector, without a trailing slash. |
-| `NEP_CONNECTOR_TOKEN` | Recommended | Shared bearer token used only server-to-server between NEP BOT and the connector. |
 | `NEP_LLM_API_KEY` | Only for AI | Provider API key. Keep this server-side only. |
 | `NEP_LLM_BASE_URL` | Only for AI | LLM-compatible API base URL. |
 | `NEP_LLM_MODEL` | Only for AI | Selected model identifier. |
 
 Do not add these values to a client file, repository, or chat message. Add project secrets through the secure deployment settings. Leave AI auto-reply disabled until all three LLM variables are configured and the provider has been tested.
 
-## Connector contract
+## First-party connector lifecycle
 
-NEP BOT calls the connector from the Python service over HTTPS. The connector should verify the bearer token, rate-limit requests, and keep all session credentials private.
+The connector uses the linked-device pairing code method. After a validated profile is selected, NEP BOT starts a server-side socket, waits for it to become pairing-ready, then requests a temporary eight-digit code. The owner must complete the confirmation on their phone. The connector updates the profile to `connected` only after the linked-device socket reports a successful connection.
 
-### Request a pairing code
-
-`POST {NEP_CONNECTOR_URL}/connector/request_pairing`
-
-```json
-{
-  "action": "request_pairing",
-  "phoneE164": "+9779841234567"
-}
-```
-
-The connector returns the temporary code without persisting it in the dashboard:
-
-```json
-{
-  "pairingCode": "ABCD-1234"
-}
-```
-
-### Disconnect a session
-
-`POST {NEP_CONNECTOR_URL}/connector/disconnect`
-
-```json
-{
-  "action": "disconnect",
-  "phoneE164": "+9779841234567"
-}
-```
-
-A successful response can be an empty JSON object or a status object. The dashboard marks a profile disconnected only after the connector confirms the action.
+The first-party command adapter supports `/hi`, `/roast`, `/menu`, `/joke`, `/meme`, `/translate`, `/media`, `/ai`, `/public`, `/private`, `/antilink on|off`, and `/group`. Commands and automations respect the owner/public mode and the saved feature switches. Media delivery remains disabled until an approved provider is configured; NEP BOT does not fetch untrusted media links by default.
 
 ## Linked-device setup
 
@@ -101,4 +69,4 @@ pnpm build
 
 The root `Dockerfile` adds Python 3 and installs `python_service/requirements.txt` alongside the normal Node build. The web application can deploy through the standard project publishing flow after a checkpoint is created.
 
-For a real linked-device connector, select an always-on single-instance runtime rather than relying on a stateless request-only deployment. The connector should be deployed separately from the dashboard unless both workloads are deliberately managed in one persistent service.
+For a real linked-device session, select an always-on single-instance runtime rather than relying on a stateless request-only deployment. A stateless deployment can serve the dashboard but may pause, restart, or lose the in-memory socket between requests. Always-on hosting keeps the first-party connector process available for pairing, live status, and ongoing command handling.

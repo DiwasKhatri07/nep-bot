@@ -13,8 +13,16 @@
 - [x] Add production configuration and clear environment-variable and WhatsApp-pairing setup documentation.
 - [x] Write and run Vitest coverage for validation, permissions, and pairing-state behavior.
 - [x] Verify the responsive UI, database integration, and project build before preparing the final version.
-- [ ] Configure an always-on WhatsApp connector and add `NEP_CONNECTOR_URL` plus `NEP_CONNECTOR_TOKEN` before requesting a real pairing code.
+- [x] Superseded the external connector route: the integrated first-party connector now requests pairing codes without `NEP_CONNECTOR_URL` or `NEP_CONNECTOR_TOKEN`.
 - [ ] Add `NEP_LLM_API_KEY`, `NEP_LLM_BASE_URL`, and `NEP_LLM_MODEL` before enabling provider-backed `/ai` replies or AI auto-reply.
 - [x] Add connector status synchronization that moves profiles through pairing, connected, disconnected, and error states using verified connector responses.
 - [x] Extend the Python service with status and configuration actions for the connector orchestration contract.
 - [ ] Run an end-to-end pairing test against a configured always-on connector and verify non-sensitive connection progress is persisted.
+- [x] Superseded external connector hosting choice with the integrated first-party connector; always-on hosting is still required for reliable long-lived sessions.
+- [x] Superseded connector URL and token settings with encrypted server-side first-party session snapshots.
+- [ ] Verify a real pairing-code request, connector status refresh, and secure logout against the integrated connector.
+- [x] Implement an in-app linked-device connector with secure server-side session storage, pairing-code requests, live status updates, and logout.
+- [x] Replace the external connector dependency with the in-app connector for the dashboard pairing workflow.
+- [ ] Validate a real user-confirmed pairing session and document its always-on runtime requirement.
+- [x] Complete the in-connector command adapter for media guidance, group controls, AI command replies, controlled AI auto-reply, and anti-call handling.
+- [x] Verify encrypted connector session references remain server-only and are excluded from all dashboard API responses.

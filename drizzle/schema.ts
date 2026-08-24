@@ -20,6 +20,7 @@ export const botProfiles = mysqlTable("bot_profiles", {
   countryIso: varchar("countryIso", { length: 2 }).notNull(),
   countryDialCode: varchar("countryDialCode", { length: 8 }).notNull(),
   nationalNumber: varchar("nationalNumber", { length: 32 }).notNull(),
+  sessionStorageKey: varchar("sessionStorageKey", { length: 512 }),
   connectionStatus: mysqlEnum("connectionStatus", ["draft", "ready_to_pair", "pairing", "connected", "disconnected", "error"]).default("draft").notNull(),
   publicMode: boolean("publicMode").default(false).notNull(),
   commandPreferences: text("commandPreferences").notNull(),
