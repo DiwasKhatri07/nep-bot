@@ -25,7 +25,8 @@
 - [x] Replace the external connector dependency with the in-app connector for the dashboard pairing workflow.
 - [ ] Validate a real user-confirmed pairing session and document its always-on runtime requirement.
 - [x] Complete the in-connector command adapter for media guidance, group controls, AI command replies, controlled AI auto-reply, and anti-call handling.
-- [ ] Verify encrypted connector session references remain server-only and are excluded from all dashboard API responses.
+- [x] Verify encrypted connector session references remain server-only and are excluded from all dashboard API responses.
+- [x] Add API coverage that verifies list and profile responses exclude encrypted connector session references.
 - [x] Diagnose why paired-session WhatsApp commands are not replying and fix the underlying command-routing path.
 - [x] Replace ad-hoc command branching with a tested command registry that supports public and owner-only commands safely.
 - [x] Add safe additional commands and feature handlers for help, uptime, profile status, moderation settings, and utility responses.

@@ -149,4 +149,17 @@ describe("NEP BOT protected procedures", () => {
     expect(dbMock.updateFeatureSettings).toHaveBeenCalledWith(77, { welcomeMessage: true, commandAudit: false });
     expect(dbMock.addActivity).toHaveBeenCalledWith(77, "features_updated", expect.any(String));
   });
+
+  it("never exposes the encrypted connector session reference in dashboard list or profile responses", async () => {
+    dbMock.listBotProfiles.mockResolvedValue([profile]);
+    dbMock.getBotProfileForOwner.mockResolvedValue(profile);
+    dbMock.getFeatureSettings.mockResolvedValue({ profileId: 77, antiLink: false, welcomeMessage: false, commandAudit: true });
+
+    const list = await createCaller().bot.list();
+    const detail = await createCaller().bot.profile({ profileId: 77 });
+
+    expect(list[0]).not.toHaveProperty("sessionStorageKey");
+    expect(detail.profile).not.toHaveProperty("sessionStorageKey");
+    expect(detail.features).toMatchObject({ commandAudit: true });
+  });
 });
