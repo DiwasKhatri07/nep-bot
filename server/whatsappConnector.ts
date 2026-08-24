@@ -17,6 +17,8 @@ type ConnectorSession = {
   socket: ReturnType<typeof makeWASocket>;
   status: ConnectionStatus;
   ready: Promise<void>;
+  startedAt: number;
+  recentMessageIds: Set<string>;
   persistTimer?: NodeJS.Timeout;
 };
 
@@ -106,9 +108,18 @@ class WhatsAppConnector {
   }
 
   private async respondToMessage(profile: BotProfile, session: ConnectorSession, event: any) {
-    if (event.type !== "notify") return;
+    if (event.type !== "notify" && event.type !== "append") return;
     for (const message of event.messages ?? []) {
       if (!message.message) continue;
+      const messageId = String(message.key?.id || "");
+      if (!messageId || session.recentMessageIds.has(messageId)) continue;
+      const timestamp = Number(message.messageTimestamp || 0);
+      if (event.type === "append" && timestamp > 0 && timestamp < Math.floor(session.startedAt / 1000) - 15) continue;
+      session.recentMessageIds.add(messageId);
+      if (session.recentMessageIds.size > 500) {
+        const oldest = session.recentMessageIds.values().next().value;
+        if (oldest) session.recentMessageIds.delete(oldest);
+      }
       const from = message.key.remoteJid;
       if (!from || from === "status@broadcast") continue;
       const text = safeText(message.message);
@@ -179,7 +190,7 @@ class WhatsAppConnector {
       markOnlineOnConnect: false,
       generateHighQualityLinkPreview: false,
     });
-    const session: ConnectorSession = { profileId: profile.id, authDir, socket, status: profile.connectionStatus as ConnectionStatus, ready };
+    const session: ConnectorSession = { profileId: profile.id, authDir, socket, status: profile.connectionStatus as ConnectionStatus, ready, startedAt: Date.now(), recentMessageIds: new Set() };
     this.sessions.set(profile.id, session);
     socket.ev.on("creds.update", async () => {
       await saveCreds();

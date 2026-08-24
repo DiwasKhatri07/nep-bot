@@ -31,3 +31,4 @@
 - [x] Add safe additional commands and feature handlers for help, uptime, profile status, moderation settings, and utility responses.
 - [x] Add dashboard command health, command mode visibility, and a safe owner-only command test action.
 - [ ] Verify live commands against a user-confirmed paired session and record non-sensitive command activity.
+- [x] Support fresh paired-device command events delivered as either notify or append updates while preventing replayed history from triggering commands.
